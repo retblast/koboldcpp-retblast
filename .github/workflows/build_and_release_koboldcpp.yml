@@ -1,1 +1,61 @@
-# (paste the full workflow content here)
+name: Build and Release koboldcpp
+
+on:
+  push:
+    branches: [ 'concedo' ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    outputs:
+      artifact-name: koboldcpp-binaries
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config git \
+            libvulkan-dev libglfw3-dev libx11-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev libasound2-dev
+
+      - name: Build targets (ttscppmain, qwen3tts, rpcserver)
+        run: |
+          make -j$(nproc) ttscppmain qwen3tts rpcserver
+
+      - name: Upload built binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: koboldcpp-binaries
+          path: |
+            ttscppmain
+            qwen3tts
+            rpcserver
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: koboldcpp-binaries
+
+      - name: Create GitHub release and upload binaries
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: koboldcpp-${{ github.sha }}
+          name: koboldcpp ${{ github.sha }}
+          body: |
+            Automated build of the koboldcpp targets (ttscppmain, qwen3tts, rpcserver) from commit ${{ github.sha }}.
+            Includes qwen3-tts Vulkan performance fix (avoid unnecessary ggml_cast to F32).
+          files: |
+            ttscppmain
+            qwen3tts
+            rpcserver
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
