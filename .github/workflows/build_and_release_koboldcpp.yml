@@ -22,15 +22,12 @@ jobs:
             libvulkan-dev libglfw3-dev libx11-dev libxrandr-dev libxinerama-dev \
             libxcursor-dev libxi-dev libasound2-dev python3
 
-      - name: Install glslc (Vulkan shader compiler)
-        run: |
-          sudo apt-get install -y glslang-tools
-
       - name: Generate Vulkan shaders
         run: |
           make vulkan-shaders-gen
           chmod +x vulkan-shaders-gen
-          ./vulkan-shaders-gen --glslc glslc --input-dir ggml/src/ggml-vulkan/vulkan-shaders --target-hpp ggml/src/ggml-vulkan-shaders.hpp --target-cpp ggml/src/ggml-vulkan-shaders.cpp --output-dir vulkan-spv-tmp
+          chmod +x glslc-linux
+          ./vulkan-shaders-gen --glslc ./glslc-linux --input-dir ggml/src/ggml-vulkan/vulkan-shaders --target-hpp ggml/src/ggml-vulkan-shaders.hpp --target-cpp ggml/src/ggml-vulkan-shaders.cpp --output-dir vulkan-spv-tmp
 
       - name: Build targets (ttscppmain, qwen3tts, rpcserver)
         run: |
