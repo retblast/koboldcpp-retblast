@@ -5,44 +5,61 @@ on:
     branches: [ 'concedo', 'add-koboldcpp-release-binary' ]
   workflow_dispatch:
 
+env:
+  KCPP_CUDA: 12.1.0
+  ARCHES_CU12: 1
+
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 180
+    runs-on: ubuntu-22.04
+    permissions: write-all
+    container:
+      image: ubuntu:20.04
+      options: --privileged
     outputs:
-      artifact-name: koboldcpp-binaries
+      artifact-name: kcpp_linux_binary
     steps:
-      - name: Checkout
+      - name: Clone
+        id: checkout
         uses: actions/checkout@v4
 
-      - name: Install build dependencies
+      - name: Show Commit Used
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config git \
-            libvulkan-dev libglfw3-dev libx11-dev libxrandr-dev libxinerama-dev \
-            libxcursor-dev libxi-dev libasound2-dev python3
+          echo "Building from ref: ${{ github.head_ref || github.ref_name }}"
 
-      - name: Generate Vulkan shaders
+      - name: Dependencies
+        id: depends
         run: |
-          make vulkan-shaders-gen
-          chmod +x vulkan-shaders-gen
-          chmod +x glslc-linux
-          ./vulkan-shaders-gen --glslc ./glslc-linux --input-dir ggml/src/ggml-vulkan/vulkan-shaders --target-hpp ggml/src/ggml-vulkan-shaders.hpp --target-cpp ggml/src/ggml-vulkan-shaders.cpp --o
+          apt-get update
+          apt-get install -y sudo
+          export DEBIAN_FRONTEND=noninteractive
+          sudo ln -fs /usr/share/zoneinfo/UTC /etc/localtime
+          echo "tzdata tzdata/Areas select Etc" | sudo debconf-set-selections
+          echo "tzdata tzdata/Zones/Etc select UTC" | sudo debconf-set-selections
+          sudo apt-get -y install git curl bzip2 python3-tk tcl tk
 
-      - name: Build targets (koboldcpp, ttscppmain, qwen3tts, rpcserver)
+      - name: Build
+        id: make_build
         run: |
-          # build koboldcpp plus the existing targets
-          make -j$(nproc) LLAMA_VULKAN=1 LLAMA_USE_BUNDLED_GLSLC=1 koboldcpp ttscppmain qwen3tts rpcserver
+          ./koboldcpp.sh dist
 
-      - name: Upload built binaries
+      - name: Verify binary exists
+        run: |
+          ls -lh dist/
+          file dist/koboldcpp-linux-x64*
+
+      - name: Rename file before upload
+        run: |
+          if [ -f "dist/koboldcpp-linux-x64-cuda"* ]; then
+            mv dist/koboldcpp-linux-x64-cuda* dist/koboldcpp-linux-x64
+          fi
+          ls -lh dist/koboldcpp-linux-x64
+
+      - name: Save artifact
         uses: actions/upload-artifact@v4
         with:
-          name: koboldcpp-binaries
-          path: |
-            koboldcpp
-            ttscppmain
-            qwen3tts
-            rpcserver
+          name: kcpp_linux_binary
+          path: dist/koboldcpp-linux-x64*
 
   release:
     needs: build
@@ -51,26 +68,26 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: koboldcpp-binaries
+          name: kcpp_linux_binary
 
-      - name: Create GitHub release and upload binaries
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: koboldcpp-${{ github.sha }}
-          name: koboldcpp ${{ github.sha }}
-          body: |
-            Automated build of the koboldcpp targets (koboldcpp, ttscppmain, qwen3tts, rpcserver) from commit ${{ github.sha }}.
-            Includes qwen3-tts Vulkan performance fix (avoid unnecessary ggml_cast to F32).
-          files: |
-            koboldcpp
-            ttscppmain
-            qwen3tts
-            rpcserver
+      - name: List artifacts
+        run: ls -lh
+
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
+
+      - name: Upload to GitHub Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "koboldcpp-${{ github.sha }}" \
+            --repo "${{ github.repository }}" \
+            --title "koboldcpp ${{ github.sha }}" \
+            --notes "Automated build from commit ${{ github.sha }}. Includes qwen3-tts Vulkan performance fix (avoid unnecessary ggml_cast to F32)." \
+            koboldcpp-linux-x64* \
+            || gh release upload "koboldcpp-${{ github.sha }}" koboldcpp-linux-x64* --clobber --repo "${{ github.repository }}"
