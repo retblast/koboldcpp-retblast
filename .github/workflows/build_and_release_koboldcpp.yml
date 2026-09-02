@@ -2,7 +2,7 @@ name: Build and Release koboldcpp
 
 on:
   push:
-    branches: [ 'concedo' ]
+    branches: [ 'concedo', 'add-koboldcpp-release-binary' ]
   workflow_dispatch:
 
 jobs:
@@ -27,17 +27,19 @@ jobs:
           make vulkan-shaders-gen
           chmod +x vulkan-shaders-gen
           chmod +x glslc-linux
-          ./vulkan-shaders-gen --glslc ./glslc-linux --input-dir ggml/src/ggml-vulkan/vulkan-shaders --target-hpp ggml/src/ggml-vulkan-shaders.hpp --target-cpp ggml/src/ggml-vulkan-shaders.cpp --output-dir vulkan-spv-tmp
+          ./vulkan-shaders-gen --glslc ./glslc-linux --input-dir ggml/src/ggml-vulkan/vulkan-shaders --target-hpp ggml/src/ggml-vulkan-shaders.hpp --target-cpp ggml/src/ggml-vulkan-shaders.cpp --o
 
-      - name: Build targets (ttscppmain, qwen3tts, rpcserver)
+      - name: Build targets (koboldcpp, ttscppmain, qwen3tts, rpcserver)
         run: |
-          make -j$(nproc) LLAMA_VULKAN=1 LLAMA_USE_BUNDLED_GLSLC=1 ttscppmain qwen3tts rpcserver
+          # build koboldcpp plus the existing targets
+          make -j$(nproc) LLAMA_VULKAN=1 LLAMA_USE_BUNDLED_GLSLC=1 koboldcpp ttscppmain qwen3tts rpcserver
 
       - name: Upload built binaries
         uses: actions/upload-artifact@v4
         with:
           name: koboldcpp-binaries
           path: |
+            koboldcpp
             ttscppmain
             qwen3tts
             rpcserver
@@ -63,9 +65,10 @@ jobs:
           tag_name: koboldcpp-${{ github.sha }}
           name: koboldcpp ${{ github.sha }}
           body: |
-            Automated build of the koboldcpp targets (ttscppmain, qwen3tts, rpcserver) from commit ${{ github.sha }}.
+            Automated build of the koboldcpp targets (koboldcpp, ttscppmain, qwen3tts, rpcserver) from commit ${{ github.sha }}.
             Includes qwen3-tts Vulkan performance fix (avoid unnecessary ggml_cast to F32).
           files: |
+            koboldcpp
             ttscppmain
             qwen3tts
             rpcserver
